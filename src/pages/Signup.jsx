@@ -193,7 +193,6 @@ const Signup = () => {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
-  const [chapter, setChapter] = useState("");
   const [adminKey, setAdminKey] = useState("");
 
   const navigate = useNavigate();
@@ -248,7 +247,6 @@ const Signup = () => {
         email,
         name,
         phone,
-        chapter,
       },
     ]);
 
@@ -298,14 +296,6 @@ const Signup = () => {
           placeholder="Phone"
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
-          style={styles.input}
-        />
-
-        <input
-          type="text"
-          placeholder="Chapter"
-          value={chapter}
-          onChange={(e) => setChapter(e.target.value)}
           style={styles.input}
         />
 
