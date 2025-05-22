@@ -124,11 +124,22 @@
 //       },
 //     ]);
 
-//    if (error) {
-//   console.error("Insert error:", error.message);
-//   Swal.fire("Error", `Failed to add request: ${error.message}`, "error");
-// }else {
+//     if (error) {
+//       console.error("Insert error:", error.message);
+//       Swal.fire("Error", `Failed to add request: ${error.message}`, "error");
+//     } else {
 //       Swal.fire("Success", "Book request added successfully", "success");
+//     }
+//   };
+
+//   const handleLogout = async () => {
+//     const { error } = await supabase.auth.signOut();
+//     if (error) {
+//       console.error("Logout error:", error.message);
+//       Swal.fire("Error", "Failed to logout", "error");
+//     } else {
+//       Swal.fire("Logged out", "You have been logged out", "success");
+//       navigate("/Signup");
 //     }
 //   };
 
@@ -145,11 +156,8 @@
 //       <div style={styles.headerBar}>
 //         <div style={styles.logo}>BookSwap ⇌</div>
 //         <div>
-//           <button style={styles.navButton} onClick={() => navigate("/Signup")}>
-//             Signup
-//           </button>
-//           <button style={styles.navButton} onClick={() => navigate("/Login")}>
-//             Login
+//           <button style={styles.navButton} onClick={handleLogout}>
+//             Logout
 //           </button>
 //         </div>
 //       </div>
@@ -245,7 +253,7 @@
 //   },
 //   navButton: {
 //     marginLeft: "10px",
-//     backgroundColor: "#007bff",
+//     backgroundColor: "#ff4d4d",
 //     color: "#fff",
 //     border: "none",
 //     padding: "8px 14px",
@@ -362,6 +370,7 @@ const Dashboard = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResult, setSearchResult] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
   const books = [
     {
@@ -385,7 +394,7 @@ const Dashboard = () => {
     dots: true,
     infinite: true,
     speed: 1000,
-    slidesToShow: 3,
+    slidesToShow: isMobile ? 1 : 3,
     slidesToScroll: 1,
     autoplay: true,
     autoplaySpeed: 2500,
@@ -393,6 +402,9 @@ const Dashboard = () => {
   };
 
   useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", handleResize);
+
     const fetchUserDetails = async () => {
       const {
         data: { user },
@@ -406,27 +418,21 @@ const Dashboard = () => {
         return;
       }
 
-      const { data: userData, error: userError } = await supabase
+      const { data: userData } = await supabase
         .from("users")
         .select("name")
         .eq("id", user.id)
         .single();
 
-      if (userError) {
-        console.error("Error fetching name:", userError.message);
-      } else {
-        setFullName(userData.name);
-      }
+      if (userData) setFullName(userData.name);
 
-      const { data: roleData, error: roleError } = await supabase
+      const { data: roleData } = await supabase
         .from("roles")
         .select("role")
         .eq("user_id", user.id)
         .single();
 
-      if (roleError) {
-        console.error("Error fetching role:", roleError.message);
-      } else if (roleData?.role === "admin") {
+      if (roleData?.role === "admin") {
         setTimeout(() => navigate("/AdminDashboard"), 100);
         return;
       }
@@ -435,6 +441,7 @@ const Dashboard = () => {
     };
 
     fetchUserDetails();
+    return () => window.removeEventListener("resize", handleResize);
   }, [navigate]);
 
   const handleSearch = () => {
@@ -451,7 +458,6 @@ const Dashboard = () => {
         title: "Oops...",
         text: "Book not found!",
         confirmButtonColor: "#3085d6",
-        confirmButtonText: "Okay",
       });
     }
   };
@@ -475,7 +481,6 @@ const Dashboard = () => {
     ]);
 
     if (error) {
-      console.error("Insert error:", error.message);
       Swal.fire("Error", `Failed to add request: ${error.message}`, "error");
     } else {
       Swal.fire("Success", "Book request added successfully", "success");
@@ -485,7 +490,6 @@ const Dashboard = () => {
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut();
     if (error) {
-      console.error("Logout error:", error.message);
       Swal.fire("Error", "Failed to logout", "error");
     } else {
       Swal.fire("Logged out", "You have been logged out", "success");
@@ -503,9 +507,10 @@ const Dashboard = () => {
 
   return (
     <div>
+      {/* Top Header */}
       <div style={styles.headerBar}>
         <div style={styles.logo}>BookSwap ⇌</div>
-        <div>
+        <div style={styles.navGroup}>
           <button style={styles.navButton} onClick={handleLogout}>
             Logout
           </button>
@@ -513,9 +518,10 @@ const Dashboard = () => {
       </div>
 
       <div style={styles.container}>
-        <h2>Welcome to Your Project{fullName && `, ${fullName}`}!</h2>
+        <h2>Welcome to BookSwap{fullName && `, ${fullName}`}!</h2>
 
-        <div style={{ marginBottom: "20px" }}>
+        {/* Search */}
+        <div style={styles.searchSection}>
           <input
             type="text"
             placeholder="Search book by name"
@@ -529,8 +535,9 @@ const Dashboard = () => {
           </button>
         </div>
 
+        {/* Book Cards */}
         <div style={styles.cardsSection}>
-          {books.slice(0, 3).map((book, index) => (
+          {books.map((book, index) => (
             <div key={index} style={styles.card}>
               <img src={book.url} alt={book.name} style={styles.cardImage} />
               <h3>{book.name}</h3>
@@ -545,6 +552,7 @@ const Dashboard = () => {
           ))}
         </div>
 
+        {/* Search Result Card */}
         {searchResult && (
           <div style={styles.bookCard}>
             <img
@@ -563,6 +571,7 @@ const Dashboard = () => {
           </div>
         )}
 
+        {/* Slider */}
         {!searchResult && searchTerm === "" && (
           <>
             <p>Here are some featured books in the slider:</p>
@@ -591,6 +600,7 @@ const Dashboard = () => {
 const styles = {
   headerBar: {
     display: "flex",
+    flexWrap: "wrap",
     justifyContent: "space-between",
     alignItems: "center",
     backgroundColor: "#333",
@@ -601,8 +611,13 @@ const styles = {
     fontSize: "20px",
     fontWeight: "bold",
   },
+  navGroup: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "10px",
+    marginTop: "10px",
+  },
   navButton: {
-    marginLeft: "10px",
     backgroundColor: "#ff4d4d",
     color: "#fff",
     border: "none",
@@ -618,13 +633,19 @@ const styles = {
     marginTop: "30px",
     textAlign: "center",
   },
+  searchSection: {
+    marginBottom: "20px",
+    display: "flex",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    gap: "10px",
+  },
   searchInput: {
     padding: "8px 12px",
     fontSize: "16px",
-    width: "250px",
+    width: "min(100%, 250px)",
     borderRadius: "6px",
     border: "1px solid #ccc",
-    marginRight: "10px",
   },
   searchButton: {
     padding: "8px 16px",
@@ -637,12 +658,14 @@ const styles = {
   },
   cardsSection: {
     display: "flex",
-    justifyContent: "space-between",
+    flexWrap: "wrap",
+    justifyContent: "center",
     gap: "20px",
     marginBottom: "30px",
   },
   card: {
-    flex: "1",
+    flex: "1 1 280px",
+    maxWidth: "300px",
     backgroundColor: "#fff",
     borderRadius: "12px",
     boxShadow: "0 4px 15px rgba(0,0,0,0.1)",
