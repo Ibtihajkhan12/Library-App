@@ -149,6 +149,11 @@ const AdminDashboard = () => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    navigate("/login");
+  };
+
   if (loading)
     return (
       <p style={{ textAlign: "center", marginTop: 50, fontSize: 18 }}>
@@ -158,7 +163,6 @@ const AdminDashboard = () => {
 
   return (
     <>
-      {/* Responsive styles */}
       <style>{`
         @media (max-width: 768px) {
           .responsive-container {
@@ -193,6 +197,13 @@ const AdminDashboard = () => {
 
       <div style={styles.container} className="responsive-container">
         <h2 style={styles.title}>📚 Admin Dashboard</h2>
+
+        {/* Logout Button */}
+        <div style={styles.logoutContainer}>
+          <button style={styles.logoutBtn} onClick={handleLogout}>
+            Logout
+          </button>
+        </div>
 
         {/* Add/Edit Book Form */}
         <form onSubmit={handleSubmit} style={styles.form}>
@@ -348,8 +359,22 @@ const styles = {
   },
   title: {
     textAlign: "center",
-    marginBottom: "30px",
+    marginBottom: "10px",
     fontSize: "28px",
+  },
+  logoutContainer: {
+    display: "flex",
+    justifyContent: "flex-end",
+    marginBottom: "20px",
+  },
+  logoutBtn: {
+    padding: "8px 16px",
+    backgroundColor: "#e91e63",
+    color: "white",
+    border: "none",
+    borderRadius: "4px",
+    cursor: "pointer",
+    fontSize: "14px",
   },
   form: {
     marginBottom: "40px",
