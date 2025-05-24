@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
+import { supabase } from "../Config/Supabase"; // Adjust path as needed
 import "./BookList.css";
 
 const books = [
@@ -45,9 +46,32 @@ const books = [
 ];
 
 const BookList = () => {
+  const [userEmail, setUserEmail] = useState("");
+  const [userName, setUserName] = useState("");
+
+  useEffect(() => {
+    const getUser = async () => {
+      const { data, error } = await supabase.auth.getUser();
+      if (data?.user) {
+        setUserEmail(data.user.email);
+        setUserName(data.user.user_metadata?.full_name || "User");
+      }
+    };
+    getUser();
+  }, []);
+
   return (
     <div className="book-section">
       <h2>Books! Check them out!</h2>
+
+      {/* User info */}
+      {userEmail && (
+        <div style={{ marginBottom: "20px", textAlign: "center" }}>
+          <p><strong>Welcome:</strong> {userName}</p>
+          <p><strong>Email:</strong> {userEmail}</p>
+        </div>
+      )}
+
       <div className="book-container">
         {books.map((book, index) => (
           <div className="book-card" key={index}>
