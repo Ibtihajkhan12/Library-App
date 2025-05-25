@@ -85,7 +85,7 @@ const Login = () => {
       if (userRole === "admin") {
         navigate("/AdminDashboard");
       } else {
-        navigate("/dashboard");
+        navigate("/Dashboard");
       }
     });
   };

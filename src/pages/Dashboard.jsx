@@ -1,340 +1,569 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "../Config/Supabase";
-import Slider from "react-slick";
 import Swal from "sweetalert2";
-import "slick-carousel/slick/slick.css";
-import "slick-carousel/slick/slick-theme.css";
-import { Player } from "@lottiefiles/react-lottie-player";
 
-const Dashboard = () => {
-  const [books, setBooks] = useState([]);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [searchResult, setSearchResult] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-  const [user, setUser] = useState(null);
+const UserDashboard = () => {
+  const [events, setEvents] = useState([]);
+  const [search, setSearch] = useState("");
+  const [currentUser, setCurrentUser] = useState(null);
+  const [newEvent, setNewEvent] = useState({ title: "", description: "" });
+  const [editingEvent, setEditingEvent] = useState(null);
+  const [participantInputs, setParticipantInputs] = useState({});
+
+  const [participantsData, setParticipantsData] = useState({});
+
+  const [dropdownOpen, setDropdownOpen] = useState({});
+
+  const navigate = useNavigate();
 
   useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth < 768);
-    window.addEventListener("resize", handleResize);
-
-    const fetchUser = async () => {
+    const getUser = async () => {
       const {
         data: { user },
       } = await supabase.auth.getUser();
-      setUser(user);
+      setCurrentUser(user);
     };
-
-    const fetchBooks = async () => {
-      const { data, error } = await supabase.from("books").select("*");
-      if (error) {
-        console.error("Error fetching books:", error);
-      } else {
-        setBooks(data);
-      }
-      setLoading(false);
-    };
-
-    fetchUser();
-    fetchBooks();
-
-    return () => window.removeEventListener("resize", handleResize);
+    getUser();
   }, []);
 
-  const handleSearch = () => {
-    const found = books.find(
-      (book) => book.name.toLowerCase() === searchTerm.trim().toLowerCase()
-    );
+  useEffect(() => {
+    if (currentUser) fetchEvents();
+  }, [currentUser]);
 
-    if (found) {
-      setSearchResult(found);
+  const fetchEvents = async () => {
+    const { data, error } = await supabase
+      .from("events")
+      .select("*")
+      .eq("creator_id", currentUser.id);
+
+    if (error) {
+      Swal.fire("Error", error.message, "error");
     } else {
-      setSearchResult(null);
-      Swal.fire({
-        icon: "error",
-        title: "Oops...",
-        text: "Book not found!",
-        confirmButtonColor: "#3085d6",
-      });
+      setEvents(data);
+      data.forEach((event) => fetchParticipants(event.id));
     }
   };
 
-  const handleAddRequest = async (book) => {
-    if (!user) {
-      Swal.fire({
-        icon: "warning",
-        title: "Please log in first",
-        confirmButtonColor: "#3085d6",
-      });
-      return;
-    }
-
-    const { data: existingRequests, error: fetchError } = await supabase
-      .from("book_requests")
+  const fetchParticipants = async (eventIds) => {
+    let ids = Array.isArray(eventIds) ? eventIds : [eventIds];
+    const { data, error } = await supabase
+      .from("participants")
       .select("*")
-      .eq("user_id", user.id)
-      .eq("book_id", book.id);
+      .in("event_id", ids);
 
-    if (fetchError) {
-      console.error(fetchError);
-      Swal.fire({
-        icon: "error",
-        title: "Error",
-        text: "Failed to check existing requests.",
-        confirmButtonColor: "#d33",
-      });
+    if (error) {
+      console.error("Error fetching participants:", error);
+      Swal.fire("Error", error.message, "error");
       return;
     }
 
-    if (existingRequests.length > 0) {
-      Swal.fire({
-        icon: "info",
-        title: "Request Already Sent",
-        text: `You have already requested the book "${book.name}".`,
-        confirmButtonColor: "#3085d6",
-      });
+    const grouped = {};
+    ids.forEach((id) => (grouped[id] = []));
+    data.forEach((participant) => {
+      if (!grouped[participant.event_id]) grouped[participant.event_id] = [];
+      grouped[participant.event_id].push(participant);
+    });
+
+    setParticipantsData((prev) => ({ ...prev, ...grouped }));
+  };
+
+  const handleCreateEvent = async () => {
+    if (!newEvent.title || !newEvent.description) {
+      Swal.fire("Error", "Please fill in all fields", "error");
       return;
     }
 
-    const { error } = await supabase.from("book_requests").insert([
+    const { error } = await supabase.from("events").insert([
       {
-        user_id: user.id,
-        user_email: user.email,
-        user_name: user.user_metadata?.full_name || user.email,
-        book_id: book.id,
-        book_name: book.name,
+        title: newEvent.title,
+        description: newEvent.description,
         status: "pending",
+        creator_id: currentUser.id,
       },
     ]);
 
     if (error) {
-      console.error("Error adding request:", error);
-      Swal.fire({
-        icon: "error",
-        title: "Request Failed",
-        text: `Could not add your book request: ${error.message}`,
-        confirmButtonColor: "#d33",
-      });
+      Swal.fire("Error", error.message, "error");
     } else {
-      Swal.fire({
-        icon: "success",
-        title: "Request Sent",
-        text: `Your request for "${book.name}" has been sent to admin.`,
-        confirmButtonColor: "#3085d6",
-      });
+      Swal.fire("Success", "Event submitted for approval", "success");
+      setNewEvent({ title: "", description: "" });
+      fetchEvents();
     }
   };
 
-  const sliderSettings = {
-    dots: true,
-    infinite: true,
-    speed: 1000,
-    slidesToShow: isMobile ? 1 : 3,
-    slidesToScroll: 1,
-    autoplay: true,
-    autoplaySpeed: 2500,
-    cssEase: "linear",
+  const startEditEvent = (event) => {
+    if (event.status !== "pending") {
+      Swal.fire("Error", "Only pending events can be edited", "error");
+      return;
+    }
+    setEditingEvent(event);
+    setNewEvent({ title: event.title, description: event.description });
   };
 
-  if (loading)
+  const handleUpdateEvent = async () => {
+    if (!newEvent.title || !newEvent.description) {
+      Swal.fire("Error", "Please fill in all fields", "error");
+      return;
+    }
+
+    const { error } = await supabase
+      .from("events")
+      .update({
+        title: newEvent.title,
+        description: newEvent.description,
+      })
+      .eq("id", editingEvent.id)
+      .eq("status", "pending")
+      .eq("creator_id", currentUser.id);
+
+    if (error) {
+      Swal.fire("Error", error.message, "error");
+    } else {
+      Swal.fire("Success", "Event updated", "success");
+      setEditingEvent(null);
+      setNewEvent({ title: "", description: "" });
+      fetchEvents();
+    }
+  };
+
+  const cancelEdit = () => {
+    setEditingEvent(null);
+    setNewEvent({ title: "", description: "" });
+  };
+
+  const handleAddParticipant = async (eventId) => {
+    const participant = participantInputs[eventId];
+    if (
+      !participant ||
+      !participant.name.trim() ||
+      !participant.email.trim() ||
+      !participant.phone.trim() ||
+      !participant.image_url.trim()
+    ) {
+      Swal.fire("Error", "Please fill all participant fields, including Image URL", "error");
+      return;
+    }
+
+    const { error } = await supabase.from("events")
+      .update({participante :{
+        event_id: eventId,
+        participant_name: participant.name.trim(),
+        participant_email: participant.email.trim(),
+        participant_phone: participant.phone.trim(),
+        participant_image_url: participant.image_url.trim(),
+      },
+    });
+
+    if (error) {
+      Swal.fire("Error", error.message, "error");
+    } else {
+      Swal.fire("Success", "Participant added", "success");
+      setParticipantInputs((prev) => ({
+        ...prev,
+        [eventId]: { name: "", email: "", phone: "", image_url: "" },
+      }));
+      fetchParticipants(eventId);
+      setDropdownOpen((prev) => ({ ...prev, [eventId]: false })); // close dropdown after adding
+    }
+  };
+
+  const handleParticipantInputChange = (eventId, field, value) => {
+    setParticipantInputs((prev) => ({
+      ...prev,
+      [eventId]: {
+        ...prev[eventId],
+        [field]: value,
+      },
+    }));
+  };
+
+  const toggleDropdown = (eventId) => {
+    setDropdownOpen((prev) => ({
+      ...prev,
+      [eventId]: !prev[eventId],
+    }));
+  };
+
+  const filteredEvents = events.filter((event) =>
+    event.title.toLowerCase().includes(search.toLowerCase())
+  );
+
+  if (!currentUser) return <p>Loading user...</p>;
+
+  const Header = () => {
+    const handleLogout = async () => {
+      await supabase.auth.signOut();
+      navigate("/login");
+    };
+
+    const styles = {
+      header: {
+        backgroundColor: "#1f2937",
+        padding: "1rem 2rem",
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+      },
+      logo: {
+        color: "#fff",
+        fontSize: "1.5rem",
+        fontWeight: "bold",
+        textDecoration: "none",
+      },
+      nav: {
+        display: "flex",
+        gap: "1rem",
+      },
+      button: {
+        padding: "0.5rem 1rem",
+        borderRadius: "6px",
+        border: "none",
+        cursor: "pointer",
+        fontWeight: "500",
+        fontSize: "1rem",
+      },
+      dashboardBtn: {
+        backgroundColor: "#3b82f6",
+        color: "#fff",
+      },
+      logoutBtn: {
+        backgroundColor: "#ef4444",
+        color: "#fff",
+      },
+    };
+
     return (
-      <div style={{ textAlign: "center", padding: "50px" }}>Loading...</div>
+      <header style={styles.header}>
+        <div style={styles.logo}>EventManager</div>
+        <nav style={styles.nav}>
+          <button
+            style={{ ...styles.button, ...styles.dashboardBtn }}
+            onClick={() => navigate("/dashboard")}
+          >
+            Dashboard
+          </button>
+          <button
+            style={{ ...styles.button, ...styles.logoutBtn }}
+            onClick={handleLogout}
+          >
+            Logout
+          </button>
+        </nav>
+      </header>
     );
+  };
+
+  const styles = {
+    container: {
+      maxWidth: "960px",
+      margin: "0 auto",
+      padding: "2rem 1rem",
+    },
+    title: {
+      fontSize: "2rem",
+      fontWeight: "700",
+      textAlign: "center",
+      marginBottom: "1.5rem",
+    },
+    searchInput: {
+      width: "100%",
+      maxWidth: "300px",
+      padding: "0.5rem",
+      borderRadius: "6px",
+      border: "1px solid #ccc",
+      marginBottom: "1rem",
+    },
+    formBox: {
+      background: "#f9f9f9",
+      borderRadius: "8px",
+      padding: "1rem",
+      boxShadow: "0 0 8px rgba(0,0,0,0.08)",
+      marginBottom: "2rem",
+    },
+    input: {
+      width: "100%",
+      padding: "0.5rem",
+      marginBottom: "1rem",
+      border: "1px solid #ccc",
+      borderRadius: "6px",
+      fontSize: "1rem",
+    },
+    buttonBlue: {
+      backgroundColor: "#2563eb",
+      color: "#fff",
+      padding: "0.5rem 1rem",
+      border: "none",
+      borderRadius: "6px",
+      cursor: "pointer",
+      fontWeight: "500",
+    },
+    buttonYellow: {
+      backgroundColor: "#fbbf24",
+      color: "#000",
+      padding: "0.5rem 1rem",
+      border: "none",
+      borderRadius: "6px",
+      marginRight: "0.5rem",
+      cursor: "pointer",
+    },
+    buttonGray: {
+      backgroundColor: "#6b7280",
+      color: "#fff",
+      padding: "0.5rem 1rem",
+      border: "none",
+      borderRadius: "6px",
+      cursor: "pointer",
+    },
+    cardGrid: {
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+      gap: "1.5rem",
+    },
+    card: {
+      backgroundColor: "#fff",
+      padding: "1rem",
+      borderRadius: "8px",
+      boxShadow: "0 2px 10px rgba(0,0,0,0.06)",
+      position: "relative",
+    },
+    cardTitle: {
+      fontSize: "1.125rem",
+      fontWeight: "600",
+      marginBottom: "0.5rem",
+    },
+    cardText: {
+      fontSize: "0.95rem",
+      marginBottom: "0.75rem",
+      color: "#4b5563",
+    },
+    statusText: (status) => ({
+      color:
+        status === "approved"
+          ? "#16a34a"
+          : status === "pending"
+          ? "#ca8a04"
+          : "#ef4444",
+      fontWeight: "600",
+    }),
+    participantList: {
+      marginTop: "1rem",
+      maxHeight: "150px",
+      overflowY: "auto",
+      borderTop: "1px solid #e5e7eb",
+      paddingTop: "0.75rem",
+    },
+    participantItem: {
+      marginBottom: "0.5rem",
+      display: "flex",
+      alignItems: "center",
+      fontSize: "0.9rem",
+      color: "#374151",
+    },
+    noEvents: {
+      textAlign: "center",
+      color: "#9ca3af",
+      fontStyle: "italic",
+    },
+  };
 
   return (
-    <div style={{ padding: "30px", fontFamily: "Arial, sans-serif" }}>
-      {/* Lottie Animation Banner */}
-      <div style={{ marginBottom: "30px", textAlign: "center" }}>
-        <Player
-          autoplay
-          loop
-          src="https://assets10.lottiefiles.com/packages/lf20_3rwasyjy.json"
-          style={{
-            height: isMobile ? "180px" : "300px",
-            width: "100%",
-            maxWidth: "800px",
-            margin: "0 auto",
-          }}
-        />
-      </div>
+    <>
+      <Header />
+      <div style={styles.container}>
+        <h2 style={styles.title}>Welcome, {currentUser.email}</h2>
 
-      {/* Search Bar */}
-      <div style={{ textAlign: "center", marginBottom: "20px" }}>
+        {/* Search */}
         <input
           type="text"
-          placeholder="Search book by name"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-          style={{
-            padding: "10px",
-            width: "300px",
-            maxWidth: "90%",
-            borderRadius: "6px",
-            border: "1px solid #ccc",
-            marginRight: "10px",
-            fontSize: "16px",
-          }}
+          placeholder="Search events by title..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={styles.searchInput}
         />
-        <button
-          onClick={handleSearch}
-          style={{
-            padding: "10px 20px",
-            borderRadius: "6px",
-            backgroundColor: "#007bff",
-            color: "white",
-            border: "none",
-            fontSize: "16px",
-            cursor: "pointer",
-          }}
-        >
-          Search
-        </button>
-      </div>
 
-      {/* Slider */}
-      <div style={{ marginBottom: "30px" }}>
-        <Slider {...sliderSettings}>
-          {books.map((book) => (
-            <div key={book.id} style={{ padding: "0 10px" }}>
-              <img
-                src={book.url}
-                alt={book.name}
-                style={{
-                  width: "100%",
-                  height: isMobile ? "180px" : "250px",
-                  objectFit: "cover",
-                  borderRadius: "10px",
-                }}
-              />
-              <h4
-                style={{
-                  textAlign: "center",
-                  marginTop: "10px",
-                  fontSize: "16px",
-                  color: "#333",
-                }}
-              >
-                {book.name}
-              </h4>
-            </div>
-          ))}
-        </Slider>
-      </div>
-
-      {/* All Books Grid */}
-      {!searchResult && (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(250px, 1fr))",
-            gap: "20px",
-          }}
-        >
-          {books.map((book) => (
-            <div
-              key={book.id}
-              style={{
-                backgroundColor: "#fff",
-                borderRadius: "12px",
-                boxShadow: "0 2px 10px rgba(0, 0, 0, 0.1)",
-                overflow: "hidden",
-                display: "flex",
-                flexDirection: "column",
-              }}
-            >
-              <img
-                src={book.url}
-                alt={book.name}
-                style={{
-                  width: "100%",
-                  height: "180px",
-                  objectFit: "cover",
-                }}
-              />
-              <div style={{ padding: "15px", flexGrow: 1 }}>
-                <h3 style={{ margin: "0 0 10px", fontSize: "18px" }}>
-                  {book.name}
-                </h3>
-                <p style={{ fontSize: "14px", color: "#666" }}>
-                  {book.description}
-                </p>
-              </div>
-              <div style={{ padding: "0 15px 15px" }}>
-                <button
-                  onClick={() => handleAddRequest(book)}
-                  style={{
-                    width: "100%",
-                    padding: "10px",
-                    backgroundColor: "#007bff",
-                    color: "white",
-                    border: "none",
-                    borderRadius: "6px",
-                    cursor: "pointer",
-                    fontSize: "16px",
-                  }}
-                >
-                  Add Request
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Search Result Card */}
-      {searchResult && (
-        <div
-          style={{
-            marginTop: "40px",
-            display: "flex",
-            justifyContent: "center",
-          }}
-        >
-          <div
-            style={{
-              maxWidth: "350px",
-              width: "100%",
-              backgroundColor: "#fff",
-              borderRadius: "12px",
-              boxShadow: "0 2px 10px rgba(0, 0, 0, 0.1)",
-              overflow: "hidden",
-            }}
-          >
-            <img
-              src={searchResult.url}
-              alt={searchResult.name}
-              style={{ width: "100%", height: "200px", objectFit: "cover" }}
-            />
-            <div style={{ padding: "15px" }}>
-              <h3 style={{ fontSize: "20px", marginBottom: "10px" }}>
-                {searchResult.name}
-              </h3>
-              <p style={{ fontSize: "14px", color: "#555" }}>
-                {searchResult.description}
-              </p>
-              <button
-                onClick={() => handleAddRequest(searchResult)}
-                style={{
-                  width: "100%",
-                  padding: "10px",
-                  backgroundColor: "#007bff",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "6px",
-                  cursor: "pointer",
-                  fontSize: "16px",
-                  marginTop: "15px",
-                }}
-              >
-                Add Request
+        {/* New / Edit Event Form */}
+        <div style={styles.formBox}>
+          <h3>{editingEvent ? "Edit Event" : "Create New Event"}</h3>
+          <input
+            type="text"
+            placeholder="Event Title"
+            value={newEvent.title}
+            onChange={(e) => setNewEvent({ ...newEvent, title: e.target.value })}
+            style={styles.input}
+          />
+          <textarea
+            placeholder="Event Description"
+            value={newEvent.description}
+            onChange={(e) =>
+              setNewEvent({ ...newEvent, description: e.target.value })
+            }
+            rows={3}
+            style={{ ...styles.input, resize: "vertical" }}
+          />
+          {editingEvent ? (
+            <>
+              <button onClick={handleUpdateEvent} style={styles.buttonBlue}>
+                Update Event
               </button>
-            </div>
-          </div>
+              <button
+                onClick={cancelEdit}
+                style={{ ...styles.buttonGray, marginLeft: "0.5rem" }}
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <button onClick={handleCreateEvent} style={styles.buttonBlue}>
+              Submit Event
+            </button>
+          )}
         </div>
-      )}
-    </div>
+
+        {/* Event Cards */}
+        <div style={styles.cardGrid}>
+          {filteredEvents.length === 0 ? (
+            <p style={styles.noEvents}>No events found.</p>
+          ) : (
+            filteredEvents.map((event) => (
+              <div key={event.id} style={styles.card}>
+                <h3 style={styles.cardTitle}>{event.title}</h3>
+                <p style={styles.cardText}>{event.description}</p>
+                <p>
+                  Status:{" "}
+                  <span style={styles.statusText(event.status)}>{event.status}</span>
+                </p>
+
+                {/* Edit button only if pending */}
+                {event.status === "pending" && (
+                  <button
+                    style={styles.buttonYellow}
+                    onClick={() => startEditEvent(event)}
+                  >
+                    Edit
+                  </button>
+                )}
+
+                {/* Participant dropdown for approved events */}
+                {event.status === "approved" && (
+                  <>
+                    <button
+                      style={{ ...styles.buttonBlue, marginBottom: "0.75rem" }}
+                      onClick={() => toggleDropdown(event.id)}
+                    >
+                      {dropdownOpen[event.id]
+                        ? "Hide Participant Form ▲"
+                        : "Add Participant ▼"}
+                    </button>
+
+                    {dropdownOpen[event.id] && (
+                      <>
+                        <h4>Add Participant</h4>
+                        <input
+                          type="text"
+                          placeholder="Name"
+                          value={participantInputs[event.id]?.name || ""}
+                          onChange={(e) =>
+                            handleParticipantInputChange(event.id, "name", e.target.value)
+                          }
+                          style={{
+                            ...styles.input,
+                            maxWidth: "250px",
+                            display: "inline-block",
+                            marginRight: "0.5rem",
+                          }}
+                        />
+                        <input
+                          type="email"
+                          placeholder="Email"
+                          value={participantInputs[event.id]?.email || ""}
+                          onChange={(e) =>
+                            handleParticipantInputChange(event.id, "email", e.target.value)
+                          }
+                          style={{
+                            ...styles.input,
+                            maxWidth: "250px",
+                            display: "inline-block",
+                            marginRight: "0.5rem",
+                          }}
+                        />
+                        <input
+                          type="text"
+                          placeholder="Phone"
+                          value={participantInputs[event.id]?.phone || ""}
+                          onChange={(e) =>
+                            handleParticipantInputChange(event.id, "phone", e.target.value)
+                          }
+                          style={{
+                            ...styles.input,
+                            maxWidth: "150px",
+                            display: "inline-block",
+                            marginRight: "0.5rem",
+                          }}
+                        />
+                        <input
+                          type="text"
+                          placeholder="Image URL"
+                          value={participantInputs[event.id]?.image_url || ""}
+                          onChange={(e) =>
+                            handleParticipantInputChange(event.id, "image_url", e.target.value)
+                          }
+                          style={{
+                            ...styles.input,
+                            maxWidth: "300px",
+                            display: "inline-block",
+                            marginRight: "0.5rem",
+                          }}
+                        />
+                        <br />
+                        <button
+                          style={{ ...styles.buttonBlue, marginTop: "0.5rem" }}
+                          onClick={() => handleAddParticipant(event.id)}
+                        >
+                          Add Participant
+                        </button>
+
+                        {/* Participant List */}
+                        <div style={styles.participantList}>
+                          <h5>Participants:</h5>
+                          {participantsData[event.id] &&
+                          participantsData[event.id].length > 0 ? (
+                            participantsData[event.id].map((p) => (
+                              <p key={p.id} style={styles.participantItem}>
+                                <img
+                                  src={p.participant_image_url}
+                                  alt={p.participant_name}
+                                  style={{
+                                    width: 30,
+                                    height: 30,
+                                    borderRadius: "50%",
+                                    marginRight: 8,
+                                    verticalAlign: "middle",
+                                  }}
+                                />
+                                {p.participant_name} - {p.participant_email} -{" "}
+                                {p.participant_phone}
+                              </p>
+                            ))
+                          ) : (
+                            <p
+                              style={{ fontStyle: "italic", color: "#9ca3af" }}
+                            >
+                              No participants added yet.
+                            </p>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </>
   );
 };
 
-export default Dashboard;
+export default UserDashboard;
